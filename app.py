@@ -914,8 +914,8 @@ CESIUM_HTML_TEMPLATE = """
       position: Cesium.Cartesian3.fromDegrees(p.lon, p.lat),
       // Área de influencia proporcional al riesgo
       ellipse: {
-        semiMajorAxis: 8000 + p.riesgo * 22000,
-        semiMinorAxis: 8000 + p.riesgo * 22000,
+        semiMajorAxis: 4000 + p.riesgo * 11000,          // radio de afectación (la mitad que antes)
+        semiMinorAxis: 4000 + p.riesgo * 11000,
         material: color.withAlpha(0.28),
         outline: true,
         outlineColor: color,
@@ -937,6 +937,8 @@ CESIUM_HTML_TEMPLATE = """
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
         pixelOffset: new Cesium.Cartesian2(0, -14),
+        // Rótulo normal de cerca (< 120 km) y cada vez más pequeño al alejar la cámara (50 % a 1 800 km)
+        scaleByDistance: new Cesium.NearFarScalar(120000, 1.0, 1800000, 0.5),
         disableDepthTestDistance: Number.POSITIVE_INFINITY
       },
       description:
@@ -1104,7 +1106,8 @@ CESIUM_HTML_TEMPLATE = """
                disableDepthTestDistance: Number.POSITIVE_INFINITY },
       label: { text: c.n, font: '700 17px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK,
                outlineWidth: 4, style: Cesium.LabelStyle.FILL_AND_OUTLINE, verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-               pixelOffset: new Cesium.Cartesian2(0, -14), disableDepthTestDistance: Number.POSITIVE_INFINITY },
+               pixelOffset: new Cesium.Cartesian2(0, -14), scaleByDistance: new Cesium.NearFarScalar(120000, 1.0, 1500000, 0.55),
+               disableDepthTestDistance: Number.POSITIVE_INFINITY },
       description: 'Distrito de ' + c.p
     });
     const b = c.b, mx = Math.max((b[2] - b[0]) * 0.25, 0.05), my = Math.max((b[3] - b[1]) * 0.25, 0.05);
