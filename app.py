@@ -204,7 +204,7 @@ CESIUM_HTML_TEMPLATE = """
         <option value="sst">Temp. superficie del mar (GFS)</option>
       </optgroup>
       <optgroup label="Terreno (Copernicus DEM)">
-        <option value="susc">Susceptibilidad a inundación (terreno)</option>
+        <option value="susc" selected>Susceptibilidad a inundación (terreno)</option>
       </optgroup>
       <optgroup label="Pronóstico estacional CCSR/IRI">
         <option value="c_pr">CCSR/IRI Precipitación (CFSv2)</option>
@@ -812,7 +812,7 @@ CESIUM_HTML_TEMPLATE = """
   const selCapa = document.getElementById('selCapa');
   const fechaIso = function (ms) { return new Date(ms).toISOString().slice(0, 10); };
 
-  function aplicarCapaNoaa() {
+  function aplicarCapaNoaa(sinVuelo) {
     const sel = selCapa.value;
     quitarTiempo();
     quitarWms();
@@ -828,7 +828,7 @@ CESIUM_HTML_TEMPLATE = """
       leyendaNoaa.innerHTML = SUSC.leyenda;
       leyendaNoaa.style.display = 'block';
       ponerSusc();
-      viewer.camera.flyTo({ destination: Cesium.Rectangle.fromDegrees(-81.4, -8.8, -77.6, -3.4), duration: 1.5 });
+      if (!sinVuelo) { viewer.camera.flyTo({ destination: Cesium.Rectangle.fromDegrees(-81.4, -8.8, -77.6, -3.4), duration: 1.5 }); }
     } else if (CCSR[sel]) {
       setEstado('Cargando pronóstico CCSR/IRI (CFSv2)…');
       cargarCcsr().then(function () {
@@ -895,7 +895,7 @@ CESIUM_HTML_TEMPLATE = """
     viewer.scene.requestRender();
   }
 
-  selCapa.onchange = aplicarCapaNoaa;
+  selCapa.onchange = function () { aplicarCapaNoaa(false); };
   selMes.onchange = function () {
     irAIndice(parseInt(selMes.value, 10));
   };
@@ -1183,6 +1183,9 @@ CESIUM_HTML_TEMPLATE = """
   // ---- Estado inicial ----
   setBase('esri');
   irAInicio(0);
+  // Capa predeterminada al entrar: susceptibilidad a inundación (sin mover la cámara: queda la vista inicial)
+  selCapa.value = 'susc';
+  aplicarCapaNoaa(true);
 })();
 </script>
 </body>
