@@ -38,7 +38,34 @@ ENFEN_HOME_HTML = (
 )
 
 
+SENAMHI_HTML = (
+    "<table><tr><th>Aviso</th><th>Nro.</th><th>Emisión</th><th>Inicio</th><th>Fin</th><th>Duración</th><th>Nivel</th></tr>"
+    '<tr><td><a href="./?p=aviso-meteorologico-vigente&a=2026&b=29348&c=00&d=SENA">PRECIPITACIONES EN LA COSTA NORTE Y SIERRA</a></td>'
+    "<td>451 (vigente)</td><td>2026-11-02</td><td>2026-11-04</td><td>2026-11-06</td><td>59 Hrs.</td><td>ROJO</td></tr>"
+    '<tr><td><a href="./?p=aviso-meteorologico-detalle&a=2025&b=25462&c=00&d=SENA">INCREMENTO DE TEMPERATURA EN LA SIERRA Y COSTA NORTE</a></td>'
+    "<td>469</td><td>2025-12-31</td><td>2026-01-01</td><td>2026-01-02</td><td>47 Hrs.</td><td>AMARILLO</td></tr>"
+    '<tr><td>PRECIPITACIONES EN LA SIERRA SUR</td><td>455 (emitido)</td><td>2026-11-04</td><td>2026-11-06</td><td>2026-11-08</td><td>71 Hrs.</td><td>NARANJA</td></tr></table>'
+)
+
+
 class PruebasLectores(unittest.TestCase):
+    def test_avisos_senamhi(self):
+        avisos = fd.parsear_avisos_senamhi(SENAMHI_HTML)
+        self.assertEqual([a["numero"] for a in avisos], [451, 469, 455])
+        self.assertEqual((avisos[0]["estado"], avisos[0]["nivel"]), ("vigente", "ROJO"))
+        self.assertEqual(avisos[0]["fin"], datetime.date(2026, 11, 6))
+        self.assertTrue(avisos[0]["url"].startswith("https://www.senamhi.gob.pe/?p=aviso-meteorologico-vigente"))
+        with self.assertRaises(ValueError):
+            fd.parsear_avisos_senamhi("<html>sin tabla</html>")
+
+    def test_avisos_costa_norte_vigentes(self):
+        avisos = fd.parsear_avisos_senamhi(SENAMHI_HTML)
+        norte = fd.avisos_costa_norte({"avisos": avisos}, datetime.date(2026, 11, 5))
+        self.assertEqual([a["numero"] for a in norte], [451])             # el 469 ya terminó; el 455 es de la sierra sur
+        self.assertEqual(fd.avisos_costa_norte({"avisos": avisos}, datetime.date(2026, 11, 7)), [])
+        self.assertEqual(fd.avisos_costa_norte({"_estado": "error"}, datetime.date(2026, 11, 5)), [])
+        self.assertEqual(fd.avisos_costa_norte(None, datetime.date(2026, 11, 5)), [])
+
     def test_oni(self):
         r = fd.parsear_oni("SEAS YR TOTAL ANOM\n  DJF 1950  24.72  -1.53\n  JAS 2026  29.12   2.16\n")
         self.assertEqual(r["trimestre"], "JAS 2026")
@@ -177,25 +204,26 @@ class PruebasAlmacen(unittest.TestCase):
 
     def test_arranque_rapido_no_descarga_si_hay_dato_reciente(self):
         llamadas = []
-        originales = (fd.obtener_noaa_enso, fd.obtener_gfs, fd.obtener_cfsv2, fd.obtener_enfen, fd.obtener_ciifen)
+        originales = (fd.obtener_noaa_enso, fd.obtener_gfs, fd.obtener_cfsv2, fd.obtener_enfen, fd.obtener_senamhi, fd.obtener_ciifen)
         try:
             fd.obtener_noaa_enso = lambda: llamadas.append("noaa") or {"oni": {"anomalia": 2.0}, "semanal": {"nino12": 4.0}}
             fd.obtener_gfs = lambda c: llamadas.append("gfs") or {"cantones": {}}
             fd.obtener_cfsv2 = lambda c: llamadas.append("cfs") or {"cantones": {}}
+            fd.obtener_senamhi = lambda: llamadas.append("senamhi") or {"avisos": []}
             fd.obtener_enfen = lambda: llamadas.append("enfen") or {"magnitud_nino12": "fuerte"}
             fd.obtener_ciifen = lambda: llamadas.append("ciifen") or {"estado": "x"}
             primera = fd.cargar_todo(mr.CANTONES)
-            self.assertEqual(sorted(llamadas), ["cfs", "ciifen", "enfen", "gfs", "noaa"])
+            self.assertEqual(sorted(llamadas), ["cfs", "ciifen", "enfen", "gfs", "noaa", "senamhi"])
             llamadas.clear()
             segunda = fd.cargar_todo(mr.CANTONES)                      # todo reciente en SQLite: cero descargas
             self.assertEqual(llamadas, [])
             self.assertEqual(segunda["enfen"]["_origen"], "sqlite")
             self.assertEqual(segunda["enfen"]["magnitud_nino12"], "fuerte")
             fd.cargar_todo(mr.CANTONES, max_edad_s=-1)                 # caducado: vuelve a descargar
-            self.assertEqual(len(llamadas), 5)
+            self.assertEqual(len(llamadas), 6)
             self.assertEqual(primera["_cargado"], segunda["_cargado"])   # mismo momento: no se duplica la «foto» del riesgo
         finally:
-            (fd.obtener_noaa_enso, fd.obtener_gfs, fd.obtener_cfsv2, fd.obtener_enfen, fd.obtener_ciifen) = originales
+            (fd.obtener_noaa_enso, fd.obtener_gfs, fd.obtener_cfsv2, fd.obtener_enfen, fd.obtener_senamhi, fd.obtener_ciifen) = originales
 
 
 class PruebasSinDescargaAlEntrar(unittest.TestCase):
@@ -203,10 +231,11 @@ class PruebasSinDescargaAlEntrar(unittest.TestCase):
 
     def setUp(self):
         self.llamadas = []
-        self.originales = (fd.obtener_noaa_enso, fd.obtener_gfs, fd.obtener_cfsv2, fd.obtener_enfen, fd.obtener_ciifen)
+        self.originales = (fd.obtener_noaa_enso, fd.obtener_gfs, fd.obtener_cfsv2, fd.obtener_enfen, fd.obtener_senamhi, fd.obtener_ciifen)
         fd.obtener_noaa_enso = lambda: self.llamadas.append("noaa") or {"oni": {"anomalia": 2.0}, "semanal": {"nino12": 4.0}}
         fd.obtener_gfs = lambda c: self.llamadas.append("gfs") or {"cantones": {}}
         fd.obtener_cfsv2 = lambda c: self.llamadas.append("cfs") or {"cantones": {}}
+        fd.obtener_senamhi = lambda: self.llamadas.append("senamhi") or {"avisos": []}
         fd.obtener_enfen = lambda: self.llamadas.append("enfen") or {"magnitud_nino12": "fuerte"}
         fd.obtener_ciifen = lambda: self.llamadas.append("ciifen") or {"estado": "x"}
         self.ruta = almacen.RUTA
@@ -214,13 +243,13 @@ class PruebasSinDescargaAlEntrar(unittest.TestCase):
 
     def tearDown(self):
         almacen.RUTA = self.ruta
-        (fd.obtener_noaa_enso, fd.obtener_gfs, fd.obtener_cfsv2, fd.obtener_enfen, fd.obtener_ciifen) = self.originales
+        (fd.obtener_noaa_enso, fd.obtener_gfs, fd.obtener_cfsv2, fd.obtener_enfen, fd.obtener_senamhi, fd.obtener_ciifen) = self.originales
 
     def _guardar_antiguo(self, horas):
         viejo = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=horas)
         clave = fd._clave_cantones(mr.CANTONES)
         for nombre, datos, k in (("noaa", {"oni": {"anomalia": 1.0}, "semanal": {"nino12": 2.0}}, None), ("gfs", {"cantones": {}}, clave),
-                                 ("cfsv2", {"cantones": {}}, clave), ("enfen", {"magnitud_nino12": "debil"}, None), ("ciifen", {"estado": "y"}, None)):
+                                 ("cfsv2", {"cantones": {}}, clave), ("enfen", {"magnitud_nino12": "debil"}, None), ("senamhi", {"avisos": []}, None), ("ciifen", {"estado": "y"}, None)):
             almacen.guardar_fuente(nombre, datos, k, viejo)
 
     def test_dato_muy_antiguo_no_dispara_descarga(self):
@@ -233,7 +262,7 @@ class PruebasSinDescargaAlEntrar(unittest.TestCase):
     def test_refrescar_descarga_todo(self):
         self._guardar_antiguo(horas=1)
         datos = fd.cargar_todo(mr.CANTONES, refrescar=True)
-        self.assertEqual(sorted(self.llamadas), ["cfs", "ciifen", "enfen", "gfs", "noaa"])
+        self.assertEqual(sorted(self.llamadas), ["cfs", "ciifen", "enfen", "gfs", "noaa", "senamhi"])
         self.assertEqual(datos["enfen"]["magnitud_nino12"], "fuerte")
 
     def test_actualizar_todo_no_se_solapa(self):
@@ -252,7 +281,7 @@ class PruebasSinDescargaAlEntrar(unittest.TestCase):
         semilla = Path(tempfile.mkdtemp()) / "semilla.json"
         almacen.exportar_semilla(semilla)
         almacen.RUTA = Path(tempfile.mkdtemp()) / "servidor_nuevo.sqlite"    # servidor recién iniciado: almacén vacío
-        self.assertEqual(almacen.importar_semilla(semilla), 5)
+        self.assertEqual(almacen.importar_semilla(semilla), 6)
         self.assertEqual(almacen.importar_semilla(semilla), 0)               # no pisa ni duplica
         self.assertEqual(almacen.resumen()["oni"], 1)
         almacen.SEMILLA, previa = semilla, almacen.SEMILLA
@@ -268,7 +297,7 @@ class PruebasSinDescargaAlEntrar(unittest.TestCase):
         import json
         with open(Path(__file__).with_name("datos_semilla.json"), encoding="utf-8") as f:
             semilla = json.load(f)
-        self.assertEqual({x["nombre"] for x in semilla["fuente"]}, {"noaa", "gfs", "cfsv2", "enfen", "ciifen"})
+        self.assertEqual({x["nombre"] for x in semilla["fuente"]}, {"noaa", "gfs", "cfsv2", "enfen", "senamhi", "ciifen"})
         self.assertGreater(len(semilla["oni"]), 800)
         self.assertGreater(len(semilla["nino_semanal"]), 2000)
 

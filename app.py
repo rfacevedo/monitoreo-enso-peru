@@ -988,9 +988,10 @@ CESIUM_HTML_TEMPLATE = """
 
   // ---- Cámara ----
   function irAInicio(duracion) {
-    // Vista inclinada 30° hacia el norte (cámara al sur mirando al norte) centrada en la costa norte de Perú
-    viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(Cesium.Cartesian3.fromDegrees(-79.7, -6.1, 0), 1), {
-      offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-60), 950000),
+    // Vista cenital (de arriba, norte arriba, sin inclinación) que encuadra la costa norte del Perú
+    viewer.camera.flyTo({
+      destination: Cesium.Rectangle.fromDegrees(-82.2, -9.2, -76.6, -3.0),
+      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
       duration: duracion === undefined ? 1.5 : duracion
     });
   }
@@ -1345,7 +1346,7 @@ def _punto(fuente):
 def panel_enso_html(datos, indice_enso):
     """Resumen de las fuentes en vivo para la barra lateral (todo el texto externo va escapado)."""
     e = html.escape
-    noaa, enfen, ciifen = datos.get("noaa"), datos.get("enfen"), datos.get("ciifen")
+    noaa, enfen, ciifen, senamhi = datos.get("noaa"), datos.get("enfen"), datos.get("ciifen"), datos.get("senamhi")
     lineas = []
     if (noaa or {}).get("_estado") != "error" and noaa:
         oni, sem = noaa["oni"], noaa["semanal"]
@@ -1368,6 +1369,14 @@ def panel_enso_html(datos, indice_enso):
         lineas.append(txt)
     else:
         lineas.append("🔴 <b>ENFEN</b> no disponible")
+    if senamhi and senamhi.get("_estado") != "error":
+        norte = fuentes_datos.avisos_costa_norte(senamhi, fecha_actual_peru())
+        txt = f"{_punto(senamhi)} <b>SENAMHI</b> · avisos vigentes en la costa norte: <b>{len(norte)}</b>"
+        for a in norte[:3]:
+            txt += f"<br>&nbsp;&nbsp;&nbsp;N.° {a['numero']} · nivel {e(a['nivel'])} (hasta {a['fin'].strftime('%d-%m')})"
+        lineas.append(txt)
+    else:
+        lineas.append("🔴 <b>SENAMHI</b> (avisos) no disponible")
     if ciifen and ciifen.get("_estado") != "error":
         lineas.append(f"{_punto(ciifen)} <b>CIIFEN</b> · boletín {e(ciifen['boletin'])}:<br>&nbsp;&nbsp;&nbsp;{e(ciifen['estado'])}")
     else:
@@ -1481,6 +1490,7 @@ st.sidebar.caption(
     "Predicción: NOAA GFS (vía Open-Meteo) y NOAA nowCOAST  \n"
     "Susceptibilidad a inundación: Copernicus DEM GLO-30 © ESA (AWS Open Data)  \n"
     "ENSO: NOAA CPC (ONI, Niño) · ENFEN (comunicado oficial) · CIIFEN (boletín El Niño/La Niña)  \n"
+    "Avisos meteorológicos: SENAMHI (tabla pública de avisos)  \n"
     "Pronóstico estacional: CCSR/IRI, Columbia Climate School (CFSv2 de NOAA/NCEP)  \n"
     "Satélite: NASA GIBS / MODIS  \n"
     "Perfil de Perú: geoBoundaries (CC0)  \n"
@@ -1510,13 +1520,17 @@ df_mapa_reciente = (
 render_cesium(df_mapa_reciente, alto=560)
 
 NOMBRES_FUENTES = {"noaa": "NOAA (ONI y Niño)", "gfs": "NOAA GFS (lluvia diaria)", "cfsv2": "CFSv2 (lluvia mensual)",
-                   "enfen": "ENFEN (comunicado oficial)", "ciifen": "CIIFEN (boletín)"}
+                   "enfen": "ENFEN (comunicado oficial)", "senamhi": "SENAMHI (avisos meteorológicos)", "ciifen": "CIIFEN (boletín)"}
 for clave, nombre in NOMBRES_FUENTES.items():
     estado = (DATOS.get(clave) or {}).get("_estado")
     if estado == "error":
         st.warning(f"Fuente no disponible: {nombre}. El modelo sigue con las demás, sin este dato.")
     elif estado == "respaldo":
         st.info(f"{nombre}: no respondió; se usa el último dato descargado.")
+for aviso in fuentes_datos.avisos_costa_norte(DATOS.get("senamhi"), fecha_actual_peru()):
+    texto_aviso = (f"**SENAMHI · Aviso N.° {aviso['numero']}:** {aviso['titulo'].capitalize()}. Nivel **{aviso['nivel']}**, "
+                   f"del {aviso['inicio'].strftime('%d-%m')} al {aviso['fin'].strftime('%d-%m-%Y')}.")
+    (st.error if aviso["nivel"] in ("ROJO", "NARANJA") else st.warning)(texto_aviso)
 st.caption("El mapa y el gráfico muestran, para cada distrito, el **peor escenario** (mayor riesgo) dentro de las fechas elegidas.")
 
 # ==========================================
@@ -1653,7 +1667,7 @@ los avisos del SENAMHI, el INDECI y el CENEPRED. La información del ENFEN se le
 si cambian de formato, esa fuente puede quedar sin datos y la app lo avisará.
 
 Fuentes: [NOAA CPC · ONI]({fuentes_datos.URL_ONI}) · [NOAA CPC · Niño semanal]({fuentes_datos.URL_NINO_SEMANAL}) ·
-[ENFEN · comunicados oficiales]({fuentes_datos.URL_ENFEN}) · [CIIFEN · boletines El Niño/La Niña]({fuentes_datos.URL_CIIFEN_LISTA}) ·
+[ENFEN · comunicados oficiales]({fuentes_datos.URL_ENFEN}) · [SENAMHI · avisos meteorológicos]({fuentes_datos.URL_SENAMHI_AVISOS}) · [CIIFEN · boletines El Niño/La Niña]({fuentes_datos.URL_CIIFEN_LISTA}) ·
 [NOAA GFS vía Open-Meteo](https://open-meteo.com/en/docs/gfs-api) · [CCSR/IRI · CFSv2]({fuentes_datos.URL_CFSV2})
 """
     )

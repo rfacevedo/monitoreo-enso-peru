@@ -9,6 +9,7 @@ Fuentes (verificadas desde el servidor):
 - NOAA CPC: ONI mensual y temperaturas del mar Niño semanales (archivos de texto).
 - NOAA GFS vía Open-Meteo: lluvia diaria por distrito (16 días).
 - CCSR/IRI (modelo CFSv2 de NOAA/NCEP): lluvia mensual por distrito (OPeNDAP binario).
+- SENAMHI: tabla pública de avisos meteorológicos (HTML): número, emisión, inicio, fin y nivel (verde/amarillo/naranja/rojo).
 - ENFEN (IMARPE, DHN, IGP, SENAMHI, ANA, INDECI): último comunicado oficial (página web) con estado, magnitud, lluvias y caudales.
 - CIIFEN: boletín mensual «El Niño/La Niña en América Latina» (PDF).
 """
@@ -33,6 +34,7 @@ URL_NINO_SEMANAL = "https://www.cpc.ncep.noaa.gov/data/indices/wksst9120.for"
 URL_OPEN_METEO = "https://api.open-meteo.com/v1/forecast"
 URL_CFSV2 = "https://forecast.ccsr.columbia.edu/data/NMME/NOAA-NCEP/CFSv2/early_month_samples/forecast/"
 URL_ENFEN = "https://enfen.imarpe.gob.pe/"
+URL_SENAMHI_AVISOS = "https://www.senamhi.gob.pe/?&p=aviso-meteorologico"
 URL_CIIFEN_LISTA = "https://ciifen.org/el-nino-la-nina-ciifen/"
 
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
@@ -326,6 +328,48 @@ def obtener_enfen():
 
 
 # ----------------------------------------------------------------------------------------------
+# SENAMHI: avisos meteorológicos (tabla HTML pública)
+# ----------------------------------------------------------------------------------------------
+def parsear_avisos_senamhi(html_texto):
+    """Filas de la tabla de avisos del SENAMHI: ``[{titulo, numero, estado, emision, inicio, fin, horas, nivel, url}]``."""
+    import html as _html
+    avisos = []
+    for fila in re.findall(r"<tr[^>]*>(.*?)</tr>", html_texto, flags=re.S | re.I):
+        celdas = [re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", " ", c))).strip()
+                  for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", fila, flags=re.S | re.I)]
+        if len(celdas) < 7:
+            continue
+        m = re.match(r"(\d+)\s*(?:\((\w+)\))?", celdas[1])
+        fechas = [re.fullmatch(r"\d{4}-\d{2}-\d{2}", c) for c in celdas[2:5]]
+        if not m or not all(fechas):
+            continue
+        enlace = re.search(r'href="([^"]+)"', fila)
+        url = None
+        if enlace:
+            url = "https://www.senamhi.gob.pe/" + enlace.group(1).lstrip("./") if not enlace.group(1).startswith("http") else enlace.group(1)
+        avisos.append({
+            "titulo": celdas[0], "numero": int(m.group(1)), "estado": m.group(2) or "",
+            "emision": datetime.date.fromisoformat(celdas[2]), "inicio": datetime.date.fromisoformat(celdas[3]),
+            "fin": datetime.date.fromisoformat(celdas[4]), "horas": celdas[5], "nivel": celdas[6].upper(), "url": url})
+    if not avisos:
+        raise ValueError("SENAMHI: no se encontró la tabla de avisos")
+    return avisos
+
+
+def obtener_senamhi():
+    avisos = parsear_avisos_senamhi(_get(URL_SENAMHI_AVISOS, timeout=90).text)
+    avisos.sort(key=lambda a: (a["emision"], a["numero"]), reverse=True)   # la numeración se reinicia cada año
+    return {"avisos": avisos[:15], "url": URL_SENAMHI_AVISOS}
+
+
+def avisos_costa_norte(senamhi, hoy):
+    """Avisos del SENAMHI que mencionan la costa norte y siguen vigentes (``fin`` >= hoy), del más reciente al más antiguo."""
+    if not senamhi or senamhi.get("_estado") == "error":
+        return []
+    return [a for a in senamhi.get("avisos", []) if "COSTA NORTE" in a["titulo"].upper() and a["fin"] >= hoy]
+
+
+# ----------------------------------------------------------------------------------------------
 # CIIFEN: boletín mensual El Niño / La Niña (PDF)
 # ----------------------------------------------------------------------------------------------
 def ultimo_boletin_ciifen(html):
@@ -404,6 +448,7 @@ def cargar_todo(cantones, max_edad_s=None, refrescar=False):
         "gfs": (lambda: obtener_gfs(cantones), clave),
         "cfsv2": (lambda: obtener_cfsv2(cantones), clave),
         "enfen": (lambda: obtener_enfen(), None),
+        "senamhi": (lambda: obtener_senamhi(), None),
         "ciifen": (lambda: obtener_ciifen(), None),
     }
 
@@ -421,7 +466,7 @@ def cargar_todo(cantones, max_edad_s=None, refrescar=False):
         dato.setdefault("_descargado", datetime.datetime.now(datetime.timezone.utc))
         return dato
 
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=6) as pool:
         futuros = {n: pool.submit(una, n, f, k) for n, (f, k) in tareas.items()}
         resultados = {n: f.result() for n, f in futuros.items()}
     # Momento de la descarga más antigua (con arranque rápido es el original, no el de ahora): así la «foto» del
@@ -470,7 +515,7 @@ def _ultima_descarga(cantones):
     """Momento de la descarga más antigua entre las fuentes guardadas (None si falta alguna)."""
     momentos = []
     for nombre, k in (("noaa", None), ("gfs", _clave_cantones(cantones)), ("cfsv2", _clave_cantones(cantones)),
-                      ("enfen", None), ("ciifen", None)):
+                      ("enfen", None), ("senamhi", None), ("ciifen", None)):
         datos, _ = almacen.leer_fuente(nombre, k)
         if datos is None:
             return None
