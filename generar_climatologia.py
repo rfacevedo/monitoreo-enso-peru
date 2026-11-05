@@ -107,7 +107,7 @@ def main():
     for c in CANTONES:
         unicas.setdefault((round(c["lat"]), round(c["lon"])), c)
     print(len(unicas), "celdas de 1° distintas", flush=True)
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=1) as pool:
         list(pool.map(lambda c: serie_cfsv2(celdas, c), unicas.values()))
     for c in CANTONES:
         print(c["canton"], "…", flush=True)

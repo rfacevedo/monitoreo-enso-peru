@@ -331,7 +331,8 @@ class PruebasActualizacionDiaria(unittest.TestCase):
         raiz = Path(__file__).parent
         copia = Path(tempfile.mkdtemp())
         for f in ("actualizar_semilla.py", "almacen.py", "fuentes_datos.py", "modelo_riesgo.py", "distritos_norte.py", "climatologia.json", "datos_semilla.json"):
-            (copia / f).write_bytes((raiz / f).read_bytes())
+            if (raiz / f).exists():                                             # climatologia.json puede faltar en un clon nuevo
+                (copia / f).write_bytes((raiz / f).read_bytes())
         antes = (copia / "datos_semilla.json").read_bytes()
         sitecustomize = copia / "sitecustomize.py"                              # sin red: toda petición HTTP falla
         sitecustomize.write_text("import requests\ndef _f(*a, **k):\n    raise RuntimeError('sin red')\nrequests.get = _f\n")
@@ -352,6 +353,9 @@ class PruebasBuscadorDistritos(unittest.TestCase):
             oeste, sur, este, norte = c["b"]
             self.assertTrue(oeste <= c["c"][0] <= este and sur <= c["c"][1] <= norte, c["n"])
             self.assertTrue(-82 < oeste < este < -76.5 and -9.2 < sur < norte < -3, c["n"])      # dentro de la costa norte
+            for anillo in c["r"]:
+                self.assertEqual(len(anillo) % 2, 0)                     # anillo plano [lon, lat, lon, lat, ...]
+                self.assertGreaterEqual(len(anillo), 6)
         self.assertEqual(len({c["u"] for c in lista}), 199)              # ubigeos únicos
 
     def test_distritos_del_modelo_existen_en_el_buscador(self):
@@ -365,6 +369,19 @@ class PruebasBuscadorDistritos(unittest.TestCase):
         for c in mr.CANTONES:
             oeste, sur, este, norte = por[c["ubigeo"]]["b"]
             self.assertTrue(oeste <= c["lon"] <= este and sur <= c["lat"] <= norte, c["canton"])
+
+
+class PruebasFormatoContornos(unittest.TestCase):
+    def test_anillo_plano_acepta_pares_y_planos(self):
+        import re
+        fuente = Path(__file__).with_name("app.py").read_text(encoding="utf-8")
+        cuerpo = re.search(r"def _anillo_plano\(anillo\):.*?\n\n\n", fuente, re.S).group(0)
+        ns = {}
+        exec(cuerpo, ns)                                                 # solo la función pura, sin cargar Streamlit
+        plano, pares = [1.0, 2.0, 3.0, 4.0], [[1.0, 2.0], [3.0, 4.0]]
+        self.assertEqual(ns["_anillo_plano"](plano), plano)
+        self.assertEqual(ns["_anillo_plano"](pares), plano)
+        self.assertEqual(ns["_anillo_plano"]([]), [])
 
 
 class PruebasModelo(unittest.TestCase):

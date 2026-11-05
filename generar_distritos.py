@@ -102,7 +102,8 @@ def simplificar(anillo, tol=TOLERANCIA):
     s = douglas_peucker(anillo, tol)
     if s[0] != s[-1]:
         s.append(s[0])
-    return [[round(x, 4), round(y, 4)] for x, y in s] if len(s) >= 4 else None
+    # anillo plano [lon, lat, lon, lat, ...] y sin repetir el primer punto (el visor cierra el contorno)
+    return [round(v, 4) for x, y in s[:-1] for v in (x, y)] if len(s) >= 4 else None
 
 
 def titulo(txt):

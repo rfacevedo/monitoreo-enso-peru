@@ -1190,6 +1190,21 @@ CESIUM_HTML_TEMPLATE = """
 ALIAS_MODELO_A_BUSCADOR = {}
 
 
+def _anillo_plano(anillo):
+    """El visor espera cada contorno como [lon, lat, lon, lat, ...]; si llega como pares [[lon, lat], ...] se aplana."""
+    if anillo and isinstance(anillo[0], (list, tuple)):
+        return [v for par in anillo for v in par]
+    return anillo
+
+
+@st.cache_resource
+def _geometrias_visor():
+    """Perfil de Perú y distritos del buscador con los contornos en el formato del visor (se calcula una sola vez)."""
+    perfil = [_anillo_plano(a) for a in PERU_PERFIL]
+    distritos = [{**d, "r": [_anillo_plano(a) for a in d["r"]]} for d in DISTRITOS_NORTE]
+    return json.dumps(perfil, separators=(",", ":")), json.dumps(distritos, ensure_ascii=False, separators=(",", ":"))
+
+
 def render_cesium(df, alto=560):
     riesgos = {
         ALIAS_MODELO_A_BUSCADOR.get(r["canton"], r["canton"]): {
@@ -1208,13 +1223,14 @@ def render_cesium(df, alto=560):
         }
         for _, r in df.iterrows()
     ]
+    perfil_json, distritos_json = _geometrias_visor()
     html = (
         CESIUM_HTML_TEMPLATE
         .replace("__CDN__", CESIUM_CDN)
         .replace("__PUNTOS__", json.dumps(puntos, ensure_ascii=False))
         .replace("__COLORES__", json.dumps(COLORES_ALERTA, ensure_ascii=False))
-        .replace("__PERFIL__", json.dumps(PERU_PERFIL, separators=(",", ":")))
-        .replace("__CANTONES__", json.dumps(DISTRITOS_NORTE, ensure_ascii=False, separators=(",", ":")))
+        .replace("__PERFIL__", perfil_json)
+        .replace("__CANTONES__", distritos_json)
         .replace("__RIESGOS__", json.dumps(riesgos, ensure_ascii=False, separators=(",", ":")))
         .replace("__SUSC__", _susceptibilidad_uri())
     )
