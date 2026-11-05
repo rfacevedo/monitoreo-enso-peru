@@ -1133,8 +1133,8 @@ CESIUM_HTML_TEMPLATE = """
       s2.textContent = 'Peor día en las fechas elegidas: ' + r.fecha + ' (' + r.horizonte + ')';
       d.appendChild(s2);
     } else {
-      d.textContent = 'Sin cálculo de riesgo todavía: el modelo cubre ' + Object.keys(RIESGOS).length +
-        ' distritos (los que están en la ventana de fechas elegida).';
+      d.textContent = 'Sin alerta visible: el distrito no entra con las fechas y el índice de riesgo mínimo elegidos (baja el índice para ver más), ' +
+        'o no es uno de los __N_MODELO__ distritos del modelo piloto. Ahora se muestran ' + Object.keys(RIESGOS).length + '.';
     }
     resBuscar.appendChild(d);
     viewer.scene.requestRender();
@@ -1229,6 +1229,7 @@ def render_cesium(df, alto=560):
         .replace("__CDN__", CESIUM_CDN)
         .replace("__PUNTOS__", json.dumps(puntos, ensure_ascii=False))
         .replace("__COLORES__", json.dumps(COLORES_ALERTA, ensure_ascii=False))
+        .replace("__N_MODELO__", str(len(CANTONES)))
         .replace("__PERFIL__", perfil_json)
         .replace("__CANTONES__", distritos_json)
         .replace("__RIESGOS__", json.dumps(riesgos, ensure_ascii=False, separators=(",", ":")))
