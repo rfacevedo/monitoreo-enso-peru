@@ -258,6 +258,7 @@ class PruebasSinDescargaAlEntrar(unittest.TestCase):
         self.assertEqual(self.llamadas, [])
         self.assertEqual(datos["enfen"]["magnitud_nino12"], "debil")
         self.assertEqual(datos["enfen"]["_origen"], "sqlite")
+        self.assertEqual({k for k in datos if not k.startswith("_")}, set(fd.FUENTES))     # FUENTES = lo que carga cargar_todo()
 
     def test_refrescar_descarga_todo(self):
         self._guardar_antiguo(horas=1)

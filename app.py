@@ -990,7 +990,7 @@ CESIUM_HTML_TEMPLATE = """
   function irAInicio(duracion) {
     // Vista cenital (de arriba, norte arriba, sin inclinación) que encuadra la costa norte del Perú
     viewer.camera.flyTo({
-      destination: Cesium.Rectangle.fromDegrees(-82.2, -9.2, -76.6, -3.0),
+      destination: Cesium.Rectangle.fromDegrees(-82.4, -9.5, -76.4, -2.6),
       orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
       duration: duracion === undefined ? 1.5 : duracion
     });
@@ -1307,7 +1307,7 @@ st.markdown(
 # 3. DATOS EN VIVO (NOAA, ENFEN, CIIFEN) Y MODELO DE RIESGO
 # ==========================================
 @st.cache_data(show_spinner="Cargando los últimos datos guardados…")
-def cargar_datos_reales():
+def cargar_datos_reales(fuentes=()):
     """Lee los últimos datos guardados (SQLite o la semilla del repositorio): al entrar NO se descarga nada de internet.
     Se renuevan solo con el botón «Actualizar datos», que descarga de nuevo y vacía esta caché."""
     datos = fuentes_datos.cargar_todo(CANTONES)
@@ -1394,7 +1394,7 @@ def panel_enso_html(datos, indice_enso):
 
 _actualizador_diario()
 try:
-    DATOS = cargar_datos_reales()
+    DATOS = cargar_datos_reales(fuentes_datos.FUENTES)
 except Exception as exc:  # noqa: BLE001
     st.error(f"No se pudieron obtener los datos en vivo: {exc} Intenta de nuevo en unos minutos.")
     st.stop()

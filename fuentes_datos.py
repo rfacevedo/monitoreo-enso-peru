@@ -40,6 +40,9 @@ URL_CIIFEN_LISTA = "https://ciifen.org/el-nino-la-nina-ciifen/"
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
          "septiembre", "octubre", "noviembre", "diciembre"]
 
+# Fuentes que carga cargar_todo(); la app la usa como clave de su caché para que, al agregar una fuente, no se sirva un resultado viejo
+FUENTES = ("noaa", "gfs", "cfsv2", "enfen", "senamhi", "ciifen")
+
 _ULTIMO_BUENO = {}
 
 
