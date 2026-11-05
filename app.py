@@ -988,10 +988,9 @@ CESIUM_HTML_TEMPLATE = """
 
   // ---- Cámara ----
   function irAInicio(duracion) {
-    // Vista cenital (de arriba, norte arriba, sin inclinación) que encuadra la costa norte del Perú
-    viewer.camera.flyTo({
-      destination: Cesium.Rectangle.fromDegrees(-82.4, -9.5, -76.4, -2.6),
-      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
+    // Vista inclinada 15° hacia el norte (cámara al sur mirando al norte, norte arriba) sobre la costa norte del Perú
+    viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(Cesium.Cartesian3.fromDegrees(-79.4, -5.7, 0), 1), {
+      offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-75), 1150000),
       duration: duracion === undefined ? 1.5 : duracion
     });
   }
