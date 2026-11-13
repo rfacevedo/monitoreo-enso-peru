@@ -1,0 +1,46 @@
+name: Actualizar capa ERA5 (temperatura del mar)
+
+# Cada mes (día 8, cuando ERA5 ya publicó el mes anterior) descarga la SST mensual de ERA5 y regenera era5_sst_anom.json.
+# Requiere el secreto del repositorio CDS_API_KEY (token personal del CDS de Copernicus; Settings > Secrets and variables > Actions)
+# y haber aceptado la licencia de Copernicus en la página del conjunto ERA5 mensual. También se puede lanzar a mano (Actions > Run workflow).
+on:
+  schedule:
+    - cron: "0 12 8 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: actualizar-era5
+  cancel-in-progress: false
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: pip install cdsapi xarray netCDF4 numpy pillow
+      - name: Descargar ERA5 y regenerar la capa
+        env:
+          CDSAPI_URL: https://cds.climate.copernicus.eu/api
+          CDSAPI_KEY: ${{ secrets.CDS_API_KEY }}
+        run: |
+          python descargar_era5_sst.py
+          python generar_era5_capa.py
+      - name: Subir la capa si cambió
+        run: |
+          if git diff --quiet -- era5_sst_anom.json; then
+            echo "Sin cambios: ERA5 aún no publicó un mes nuevo."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add era5_sst_anom.json
+            git commit -m "Capa ERA5: renueva la anomalía mensual de la temperatura del mar"
+            git push
+          fi
