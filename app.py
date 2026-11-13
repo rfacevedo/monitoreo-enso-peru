@@ -101,6 +101,15 @@ def _susceptibilidad_uri():
     return "data:image/png;base64," + base64.b64encode(datos).decode("ascii")
 
 
+@st.cache_resource
+def _era5_json():
+    """Capa mensual de anomalía de SST de ERA5 (generar_era5_capa.py) como JSON incrustable; vacía si no existe el archivo."""
+    try:
+        return (Path(__file__).with_name("era5_sst_anom.json")).read_text(encoding="utf-8")
+    except OSError:
+        return "{}"
+
+
 CESIUM_HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -205,6 +214,9 @@ CESIUM_HTML_TEMPLATE = """
       </optgroup>
       <optgroup label="Terreno (Copernicus DEM)">
         <option value="susc" selected>Susceptibilidad a inundación (terreno)</option>
+      </optgroup>
+      <optgroup label="Mar (Copernicus ERA5)">
+        <option value="era5">Anomalía de temp. del mar (ERA5, mensual)</option>
       </optgroup>
       <optgroup label="Pronóstico estacional CCSR/IRI">
         <option value="c_pr">CCSR/IRI Precipitación (CFSv2)</option>
@@ -422,6 +434,29 @@ CESIUM_HTML_TEMPLATE = """
       '<small>Terreno, no pronóstico: dónde el suelo se inunda con más facilidad (altura, relieve local, pendiente y cercanía al mar o estuario). ' +
       'Copernicus DEM GLO-30 © ESA, ~185 m. Indicativo, sin validar con inundaciones reales.</small>'
   };
+  // Anomalía mensual de la temperatura del mar (ERA5, Copernicus): una imagen por mes, generada con generar_era5_capa.py
+  const ERA5 = __ERA5__;
+  let capaEra5 = null;
+  function quitarEra5() {
+    if (capaEra5) { viewer.imageryLayers.remove(capaEra5, true); capaEra5 = null; }
+  }
+  function ponerEra5(i) {
+    quitarEra5();
+    capaEra5 = viewer.imageryLayers.addImageryProvider(new Cesium.SingleTileImageryProvider({
+      url: ERA5.png[i], rectangle: Cesium.Rectangle.fromDegrees(ERA5.rect[0], ERA5.rect[1], ERA5.rect[2], ERA5.rect[3]),
+      credit: 'ERA5 © Copernicus Climate Change Service (C3S)'
+    }));
+    capaEra5.alpha = 0.9;
+    const ix = ERA5.indices[ERA5.meses[i]] || {};
+    leyendaNoaa.innerHTML = '<b>Anomalía de temperatura del mar (ERA5)</b>' +
+      '<div style="height:10px;border-radius:3px;margin:4px 0 2px;background:linear-gradient(90deg,#2563eb,#ffffff,#dc2626)"></div>' +
+      '<div style="display:flex;justify-content:space-between"><span>−' + ERA5.tope + ' °C</span><span>0</span><span>+' + ERA5.tope + ' °C</span></div>' +
+      '<div style="margin-top:4px">' + etiquetaMes(Date.parse(ERA5.meses[i] + '-01T00:00:00Z')) + ' · Niño 3.4: <b>' + (ix.n34 >= 0 ? '+' : '') + ix.n34 +
+      ' °C</b> · Niño 1+2: <b>' + (ix.n12 >= 0 ? '+' : '') + ix.n12 + ' °C</b></div>' +
+      '<small>Promedio mensual frente a 1991-2020, resolución 0,25°. Es observación del mes ya cerrado (llega con unos días de retraso), no un pronóstico. ' +
+      'ERA5, Copernicus Climate Change Service (C3S).</small>';
+    viewer.scene.requestRender();
+  }
   let capaSusc = null;
   function quitarSusc() {
     if (capaSusc) { viewer.imageryLayers.remove(capaSusc, true); capaSusc = null; }
@@ -818,6 +853,7 @@ CESIUM_HTML_TEMPLATE = """
     quitarWms();
     quitarModis();
     quitarSusc();
+    quitarEra5();
     fuenteGfs.entities.removeAll();
     fuenteCcsr.entities.removeAll();
     boxFecha.style.display = 'none';
@@ -829,6 +865,16 @@ CESIUM_HTML_TEMPLATE = """
       leyendaNoaa.style.display = 'block';
       ponerSusc();
       if (!sinVuelo) { viewer.camera.flyTo({ destination: Cesium.Rectangle.fromDegrees(-81.4, -8.8, -77.6, -3.4), duration: 1.5 }); }
+    } else if (sel === 'era5') {
+      if (!ERA5.meses || !ERA5.meses.length) { setEstado('La capa ERA5 no está disponible en este despliegue.'); return; }
+      leyendaNoaa.style.display = 'block';
+      const fechasE = ERA5.meses.map(function (m) { return Date.parse(m + '-01T00:00:00Z'); });
+      iniciarTiempo({
+        titulo: 'Mes', fechas: fechasE, idx: fechasE.length - 1, span: 30 * 86400000, intervalo: 1500,
+        etiqueta: etiquetaMes,
+        render: function (i) { ponerEra5(i); }
+      });
+      if (!sinVuelo) { viewer.camera.flyTo({ destination: Cesium.Rectangle.fromDegrees(-100, -20, -70, 2), duration: 1.5 }); }
     } else if (CCSR[sel]) {
       setEstado('Cargando pronóstico CCSR/IRI (CFSv2)…');
       cargarCcsr().then(function () {
@@ -1240,6 +1286,7 @@ def render_cesium(df, alto=560):
         .replace("__CANTONES__", distritos_json)
         .replace("__RIESGOS__", json.dumps(riesgos, ensure_ascii=False, separators=(",", ":")))
         .replace("__SUSC__", _susceptibilidad_uri())
+        .replace("__ERA5__", _era5_json())
     )
     components.html(html, height=alto, scrolling=False)
 
@@ -1491,6 +1538,7 @@ st.sidebar.caption(
     "Imagen: © Esri, Maxar, Earthstar Geographics  \n"
     "Predicción: NOAA GFS (vía Open-Meteo) y NOAA nowCOAST  \n"
     "Susceptibilidad a inundación: Copernicus DEM GLO-30 © ESA (AWS Open Data)  \n"
+    "Temperatura del mar: ERA5 © Copernicus Climate Change Service (C3S), datos mensuales  \n"
     "ENSO: NOAA CPC (ONI, Niño) · ENFEN (comunicado oficial) · CIIFEN (boletín El Niño/La Niña)  \n"
     "Avisos meteorológicos: SENAMHI (tabla pública de avisos)  \n"
     "Pronóstico estacional: CCSR/IRI, Columbia Climate School (CFSv2 de NOAA/NCEP)  \n"
